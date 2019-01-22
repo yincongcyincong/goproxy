@@ -5,7 +5,10 @@ if [ -e /tmp/proxy ]; then
 fi
 mkdir /tmp/proxy
 cd /tmp/proxy
-wget https://github.com/snail007/goproxy/releases/download/v4.0/proxy-linux-amd64.tar.gz
+
+LAST_VERSION=$(curl --silent "https://api.github.com/repos/snail007/goproxy/releases/latest" | grep -Po '"tag_name": "\K.*?(?=")')
+
+wget "https://github.com/snail007/goproxy/releases/download/${LAST_VERSION}/proxy-linux-amd64.tar.gz"
 
 # #install proxy
 tar zxvf proxy-linux-amd64.tar.gz
@@ -19,7 +22,7 @@ fi
 
 if [ ! -e /etc/proxy/proxy.crt ]; then
     cd /etc/proxy/
-    proxy keygen >/dev/null 2>&1 
+    proxy keygen -C proxy >/dev/null 2>&1 
 fi
 rm -rf /tmp/proxy
 echo "install done"

@@ -2,50 +2,68 @@ package services
 
 import (
 	"fmt"
-	"log"
+	logger "log"
 	"runtime/debug"
+	"sync"
 )
 
 type Service interface {
-	Start(args interface{}) (err error)
+	Start(args interface{}, log *logger.Logger) (err error)
 	Clean()
 }
 type ServiceItem struct {
 	S    Service
 	Args interface{}
 	Name string
+	Log  *logger.Logger
 }
 
-var servicesMap = map[string]*ServiceItem{}
+var servicesMap = sync.Map{}
 
-func Regist(name string, s Service, args interface{}) {
-	servicesMap[name] = &ServiceItem{
+func Regist(name string, s Service, args interface{}, log *logger.Logger) {
+	Stop(name)
+	servicesMap.Store(name, &ServiceItem{
 		S:    s,
 		Args: args,
 		Name: name,
+		Log:  log,
+	})
+}
+func GetService(name string) *ServiceItem {
+	if s, ok := servicesMap.Load(name); ok && s.(*ServiceItem).S != nil {
+		return s.(*ServiceItem)
+	}
+	return nil
+
+}
+func Stop(name string) {
+	if s, ok := servicesMap.Load(name); ok && s.(*ServiceItem).S != nil {
+		s.(*ServiceItem).S.Clean()
+		*s.(*ServiceItem) = ServiceItem{}
+		s = nil
+		servicesMap.Store(name, nil)
+		servicesMap.Delete(name)
 	}
 }
-func Run(name string, args ...interface{}) (service *ServiceItem, err error) {
-	service, ok := servicesMap[name]
+func Run(name string, args interface{}) (service *ServiceItem, err error) {
+	_service, ok := servicesMap.Load(name)
 	if ok {
-		go func() {
-			defer func() {
-				err := recover()
-				if err != nil {
-					log.Fatalf("%s servcie crashed, ERR: %s\ntrace:%s", name, err, string(debug.Stack()))
-				}
-			}()
-			if len(args) == 1 {
-				err = service.S.Start(args[0])
-			} else {
-				err = service.S.Start(service.Args)
-			}
-			if err != nil {
-				log.Fatalf("%s servcie fail, ERR: %s", name, err)
+		defer func() {
+			e := recover()
+			if e != nil {
+				err = fmt.Errorf("%s servcie crashed, ERR: %s\ntrace:%s", name, e, string(debug.Stack()))
 			}
 		}()
-	}
-	if !ok {
+		service = _service.(*ServiceItem)
+		if args != nil {
+			err = service.S.Start(args, service.Log)
+		} else {
+			err = service.S.Start(service.Args, service.Log)
+		}
+		if err != nil {
+			err = fmt.Errorf("%s servcie fail, ERR: %s", name, err)
+		}
+	} else {
 		err = fmt.Errorf("service %s not found", name)
 	}
 	return
